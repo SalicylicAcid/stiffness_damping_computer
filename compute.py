@@ -12,11 +12,10 @@ Joint Stiffness & Damping 回归计算 + 格式化 XLSX 输出
 基于阻抗模型: tau = K*(theta_ref - theta_sta) + D*(theta_dot_ref - theta_dot_sta)
 
 用法:
-  uv run compute.py                     # 本地运行
-  uv run --script https://.../compute.py # 远程运行 (uv ≥ 0.4)
-
-  curl -sL https://.../compute.py | uv run -   # 管道运行 (Unix)
-  irm https://.../compute.py | uv run -        # 管道运行 (Windows)
+  uv run compute.py                                                            # 本地运行
+  uv run --script https://cdn.jsdelivr.net/gh/...@main/compute.py              # 远程运行 (uv ≥ 0.4)
+  curl -sL https://cdn.jsdelivr.net/gh/...@main/compute.py | uv run -         # 管道运行 (Unix)
+  (Invoke-WebRequest https://cdn.jsdelivr.net/gh/...@main/compute.py).Content | uv run -  # 管道运行 (Win)
 
 关节分组 (29 -> 7-7-3-6-6, 27 -> 7-7-1-6-6):
   7-7 和 6-6 并排对比; 联合适的数量和分组自动适配。

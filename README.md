@@ -18,19 +18,27 @@ numpy / openpyxl 由 uv 自动管理，无需手动安装。
 
 ### 方式 A：零安装管道运行（无需克隆，最简）
 
+脚本本身声明了全部依赖（numpy / openpyxl），uv 自动读取安装。
+
 ```bash
+# ⭐ 推荐: jsdelivr CDN（高可用，无频率限制）
 # Windows PowerShell
-irm https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py | uv run -
+(Invoke-WebRequest https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py).Content | uv run -
+
+# Windows curl.exe (Win 10+ 自带)
+curl -sL https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py | uv run -
 
 # Linux / macOS / WSL
-curl -sL https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py | uv run -
+curl -sL https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py | uv run -
 ```
 
-↓ 等价于这种简化写法（uv ≥ 0.4）：
+↓ 或使用 uv 原生远程脚本执行（uv ≥ 0.4）：
 
 ```bash
-uv run --script https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py
+uv run --script https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py
 ```
+
+> **备用源**：若 CDN 不可用，可将 `cdn.jsdelivr.net/gh/...@main/` 改为 `raw.githubusercontent.com/.../main/`。
 
 运行前确保当前目录下有 `dof_ref_*.csv` / `dof_sta_*.csv` 配对文件。
 结果文件 `stiffness_damping_*.xlsx` 输出到当前目录。
