@@ -9,7 +9,7 @@
 """
 Joint Stiffness & Damping 回归计算 + 格式化 XLSX 输出
 ======================================================
-基于阻抗模型: tau = K*(theta_ref - theta_sta) + D*(theta_dot_ref - theta_dot_sta)
+基于阻抗模型: tau = K·(theta_ref − theta_sta) + D·(theta_dot_ref − theta_dot_sta)
 
 用法:
   uv run compute.py                                                            # 本地运行

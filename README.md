@@ -2,7 +2,11 @@
 
 基于阻抗模型的关节刚度/阻尼回归计算，自动读取 CSV 配对文件，输出格式化 XLSX 结果。
 
-**模型**: τ = K · (θ_ref − θ_sta) + D · (θ̇_ref − θ̇_sta)
+**模型**:
+
+$$\tau = K(\theta_{\text{ref}} - \theta_{\text{sta}}) + D(\dot{\theta}_{\text{ref}} - \dot{\theta}_{\text{sta}})$$
+
+其中 $\tau$ 为关节力矩，$\theta$ 为关节位置，$\dot{\theta}$ 为关节速度，$K$ 为刚度系数，$D$ 为阻尼系数。
 
 ## 依赖
 
@@ -90,7 +94,7 @@ uv run compute.py -C ./data -o ./results
 每份 Excel 包含两个 Sheet：
 
 - **Summary** — 整体统计 (均值/标准差/范围) + 指标说明
-- **Data** — 各关节 K/D/R²/RMSE 逐关节结果，按关节分组排版（7-7 / 6-6 并排对比）
+- **Data** — 各关节 $K$ / $D$ / $R^2$ / RMSE 逐关节结果，按关节分组排版（7-7 / 6-6 并排对比）
 
 ### 字体颜色说明
 
@@ -105,9 +109,9 @@ uv run compute.py -C ./data -o ./results
 
 | 指标 | 正常 | 偏弱 | 异常 |
 |------|------|------|------|
-| R² | ≥ 0.8 | 0.6 ~ 0.8 | < 0.6 |
-| RMSE | ≤ P75 | P75 ~ P90 | > P90 |
-| K / D | \|z\| ≤ 1 | 1 < \|z\| ≤ 2 | \|z\| > 2 |
+| $R^2$ | $\ge 0.8$ | $0.6 \sim 0.8$ | $< 0.6$ |
+| RMSE | $\le P_{75}$ | $P_{75} \sim P_{90}$ | $> P_{90}$ |
+| $K$ / $D$ | $\lvert z \rvert \le 1$ | $1 < \lvert z \rvert \le 2$ | $\lvert z \rvert > 2$ |
 
 ## 关节分组
 
