@@ -1,0 +1,33 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+
+# ── Virtual Environment (uv, venv) ──
+.venv/
+venv/
+env/
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── IDE / Editor ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Project Input ──
+# 存放项目输入文件，如原始数据、配置文件等
+*.csv
+
+# ── Project Output ──
+# 生成的 XLSX 结果文件建议不纳入版本控制
+*.xlsx
+# 如果希望保留示例结果可注释上行，单独跟踪

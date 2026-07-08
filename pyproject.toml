@@ -1,0 +1,10 @@
+[project]
+name = "joint-stiffness-damping"
+description = "Joint Stiffness & Damping 回归计算工具"
+version = "1.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.21",
+    "openpyxl>=3.0",
+]
+
