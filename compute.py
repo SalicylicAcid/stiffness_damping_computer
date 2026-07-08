@@ -1,16 +1,29 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 # -*- coding: utf-8 -*-
+# /// script
+# dependencies = [
+#   "numpy>=1.21",
+#   "openpyxl>=3.0",
+# ]
+# ///
 """
 Joint Stiffness & Damping 回归计算 + 格式化 XLSX 输出
 ======================================================
 基于阻抗模型: tau = K*(theta_ref - theta_sta) + D*(theta_dot_ref - theta_dot_sta)
+
+用法:
+  uv run compute.py                     # 本地运行
+  uv run --script https://.../compute.py # 远程运行 (uv ≥ 0.4)
+
+  curl -sL https://.../compute.py | uv run -   # 管道运行 (Unix)
+  irm https://.../compute.py | uv run -        # 管道运行 (Windows)
 
 关节分组 (29 -> 7-7-3-6-6, 27 -> 7-7-1-6-6):
   7-7 和 6-6 并排对比; 联合适的数量和分组自动适配。
 支持多组 CSV -> 多个 Sheet。
 """
 
-import glob, os, sys, re
+import argparse, glob, os, sys, re
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -598,11 +611,23 @@ def write_summary_sheet(ws, all_data):
 # 5. Main
 # ============================================================
 def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    pairs = find_csv_pairs(script_dir)
+    parser = argparse.ArgumentParser(
+        description="Joint Stiffness & Damping 回归计算",
+        epilog="示例: uv run compute.py -C ./data -o ./results",
+    )
+    parser.add_argument("-C", "--cwd", default=".",
+                        help="CSV 输入文件所在目录 (默认: 当前目录)")
+    parser.add_argument("-o", "--output-dir", default=None,
+                        help="XLSX 输出目录 (默认: 与输入目录相同)")
+    args = parser.parse_args()
+
+    work_dir = os.path.abspath(args.cwd)
+    out_dir = os.path.abspath(args.output_dir) if args.output_dir else work_dir
+
+    pairs = find_csv_pairs(work_dir)
 
     if not pairs:
-        print("ERROR: No dof_ref_*/dof_sta_* pairs found")
+        print(f"ERROR: No dof_ref_*/dof_sta_* pairs found in '{work_dir}'")
         sys.exit(1)
 
     for label, ref_path, sta_path in pairs:
@@ -642,7 +667,8 @@ def main():
         ws = wb.create_sheet(title=label.replace(" ", "_")[:31])
         write_data_sheet(ws, results, n_joints, label, n_ref, n_sta, cross_scores)
 
-        output_path = os.path.join(script_dir, f"stiffness_damping_{suffix}.xlsx")
+        output_path = os.path.join(out_dir, f"stiffness_damping_{suffix}.xlsx")
+        os.makedirs(out_dir, exist_ok=True)
         wb.save(output_path)
         print(f"  Saved: {os.path.basename(output_path)}")
 

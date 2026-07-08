@@ -6,26 +6,51 @@
 
 ## 依赖
 
-| 工具 | 说明 |
-|------|------|
-| [uv](https://docs.astral.sh/uv/) | Python 包管理器，自动创建虚拟环境 |
-| Python ≥ 3.10 | — |
-| numpy | 数值计算 |
-| openpyxl | Excel 输出 |
+只需安装 [uv](https://docs.astral.sh/uv/) (Python ≥ 3.10)：
+
+```bash
+pip install uv       # 或用官网安装脚本
+```
+
+numpy / openpyxl 由 uv 自动管理，无需手动安装。
 
 ## 一键运行
 
+### 方式 A：零安装管道运行（无需克隆，最简）
+
 ```bash
-# 确保已安装 uv (安装: pip install uv 或参考官网)
+# Windows PowerShell
+irm https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py | uv run -
+
+# Linux / macOS / WSL
+curl -sL https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py | uv run -
+```
+
+↓ 等价于这种简化写法（uv ≥ 0.4）：
+
+```bash
+uv run --script https://raw.githubusercontent.com/SalicylicAcid/stiffness_damping_computer/main/compute.py
+```
+
+运行前确保当前目录下有 `dof_ref_*.csv` / `dof_sta_*.csv` 配对文件。
+结果文件 `stiffness_damping_*.xlsx` 输出到当前目录。
+
+### 方式 B：本地运行
+
+```bash
+git clone https://github.com/SalicylicAcid/stiffness_damping_computer.git
+cd stiffness_damping_computer
 uv run compute.py
 ```
 
-`uv run compute.py` 会自动：
-1. 在 `.venv/` 创建虚拟环境
-2. 根据 `pyproject.toml` 安装依赖
-3. 执行脚本
+`uv run compute.py` 会自动创建 `.venv` 并安装依赖。首次安装依赖，后续直接执行。
 
-首次运行会下载依赖，后续直接执行。
+### 高级选项
+
+```bash
+# 指定输入目录和输出目录
+uv run compute.py -C ./data -o ./results
+```
 
 ## 输入文件
 
@@ -102,7 +127,7 @@ A-B 组 (7-7) 和 D-E 组 (6-6) 并排对比。
 ├── pyproject.toml                 # 项目配置 & 依赖声明
 ├── .gitignore
 ├── README.md
-├── dof_ref_*.csv                  # 输入: 参考轨迹
-├── dof_sta_*.csv                  # 输入: 跟随状态
-└── stiffness_damping_*.xlsx       # 输出: 结果文件
+├── dof_ref_*.csv                  # 输入: 参考轨迹 (不纳入版本控制)
+├── dof_sta_*.csv                  # 输入: 跟随状态 (不纳入版本控制)
+└── stiffness_damping_*.xlsx       # 输出: 结果文件 (不纳入版本控制)
 ```
