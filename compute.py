@@ -144,9 +144,42 @@ def find_csv_pairs(directory):
 # ============================================================
 # 2. 数据处理
 # ============================================================
+def _load_csv_safe(path):
+    """Load CSV with numpy, skipping lines that are corrupted (null bytes, wrong column count)."""
+    # First pass: read raw lines, skip obviously bad ones
+    import csv
+    good_lines = []
+    expected_cols = None
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if expected_cols is None:
+                # header
+                expected_cols = len(row)
+                good_lines.append(",".join(row))
+                continue
+            # skip empty lines or lines with null bytes
+            if not row or all(c == "\0" or c == "" for c in row):
+                continue
+            if len(row) != expected_cols:
+                continue
+            # replace null bytes in any field
+            cleaned = [c.replace("\0", "") for c in row]
+            good_lines.append(",".join(cleaned))
+    import tempfile
+    fd, tmp = tempfile.mkstemp(suffix=".csv")
+    os.close(fd)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(good_lines))
+        return np.genfromtxt(tmp, delimiter=",", names=True, dtype=None, encoding="utf-8")
+    finally:
+        os.unlink(tmp)
+
+
 def load_and_compute(ref_path, sta_path):
-    ref_data = np.genfromtxt(ref_path, delimiter=",", names=True, dtype=None, encoding="utf-8")
-    sta_data = np.genfromtxt(sta_path, delimiter=",", names=True, dtype=None, encoding="utf-8")
+    ref_data = _load_csv_safe(ref_path)
+    sta_data = _load_csv_safe(sta_path)
 
     ref_cols = ref_data.dtype.names
     sta_cols = sta_data.dtype.names
