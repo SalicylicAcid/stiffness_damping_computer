@@ -20,27 +20,40 @@ numpy / openpyxl 由 uv 自动管理，无需手动安装。
 
 ## 一键运行
 
-### 方式 A：零安装管道运行（无需克隆，最简）
+### 方式 A：零安装远程运行（无需克隆，最简）
 
 脚本本身声明了全部依赖（numpy / openpyxl），uv 自动读取安装。
 
-```bash
-# ⭐ 推荐: jsdelivr CDN（高可用，无频率限制）
-# Windows PowerShell
-(Invoke-WebRequest https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py).Content | uv run -
+**⭐ 推荐（全平台，支持传参，uv ≥ 0.4）**
 
-# Windows curl.exe (Win 10+ 自带)
-curl -sL https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py | uv run -
+```bash
+# 在日志目录下执行即处理当前目录
+uv run --script https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py
+
+# 也可显式指定输入/输出目录
+uv run --script https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py -C ./logs -o ./results
+```
+
+**或先下载再运行（便于反复使用）**
+
+```bash
+# Windows PowerShell
+Invoke-WebRequest -Uri https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py -OutFile compute.py
+uv run compute.py
 
 # Linux / macOS / WSL
+curl -sLO https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py
+uv run compute.py
+```
+
+**管道运行（仅 Linux / macOS / WSL）**
+
+```bash
 curl -sL https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py | uv run -
 ```
 
-↓ 或使用 uv 原生远程脚本执行（uv ≥ 0.4）：
-
-```bash
-uv run --script https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_computer@main/compute.py
-```
+> 管道方式不支持向脚本传参（请先 `cd` 到目标目录）；且 Windows 上 uv 会把脚本作为命令行参数
+> 传给 python，脚本超过约 32KB 时会报错，Windows 请使用上面的 `uv run --script` 或下载方式。
 
 > **备用源**：若 CDN 不可用，可将 `cdn.jsdelivr.net/gh/...@main/` 改为 `raw.githubusercontent.com/.../main/`。
 
