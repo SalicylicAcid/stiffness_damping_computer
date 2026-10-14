@@ -506,7 +506,8 @@ def window_text(meta):
 def check_load_dominated(results):
     """
     负刚度预警: 稳定位置控制器不可能出现 K<0。
-    若拟合质量好 (R²>0.8) 但 K<0, 说明该段为准静态/负载主导, 无法分离控制器刚度。
+    若拟合质量好 (R²>0.8) 但 K<0, 说明力矩与位置误差符号相反,
+    力矩由负载/工况主导, K 反映负载而非控制器刚度。
     返回负刚度且拟合良好的关节名列表。
     """
     out = []
@@ -740,8 +741,8 @@ def write_summary_sheet(ws, meta, results, joints):
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
             cell = ws.cell(row=row, column=2,
                            value=f"⚠ {len(neg)} 个关节 K<0 且 R²>0.8 "
-                                 f"({', '.join(neg)}) — 该段为准静态/负载主导, "
-                                 f"K 反映负载随位姿变化, 不代表控制器刚度")
+                                 f"({', '.join(neg)}) — 力矩与位置误差符号相反, "
+                                 f"该段力矩由负载/工况主导, K 不代表控制器刚度")
             cell.font = Font(name="Microsoft YaHei", size=9, color=BAD_COLOR)
             cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
             ws.row_dimensions[row].height = 28
@@ -893,8 +894,8 @@ def main():
         if neg:
             print(f"  WARN: {len(neg)} 个关节 K<0 且拟合良好 ({', '.join(neg[:6])}"
                   f"{' ...' if len(neg) > 6 else ''})")
-            print("        → 该段可能为准静态/负载主导, K 反映负载随位姿变化, 不代表控制器刚度;")
-            print("          建议改用机器人真实运行(快速往复运动)的日志段")
+            print("        → 力矩与位置误差符号相反 (稳定位置控制器不可能如此),")
+            print("          该段力矩由负载/工况主导, K 不代表控制器刚度")
 
         cross_scores = build_scores(valid)
 
