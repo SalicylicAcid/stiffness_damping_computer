@@ -1,7 +1,7 @@
 [project]
 name = "joint-stiffness-damping"
-description = "Joint Stiffness & Damping 回归计算工具"
-version = "1.0.0"
+description = "Joint Stiffness & Damping 回归计算工具 (新版会话日志)"
+version = "2.0.0"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.21",

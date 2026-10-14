@@ -1,6 +1,6 @@
 # Joint Stiffness & Damping 回归计算工具
 
-基于阻抗模型的关节刚度/阻尼回归计算，自动读取 CSV 配对文件，输出格式化 XLSX 结果。
+基于阻抗模型的关节刚度/阻尼回归计算，自动读取机器人会话日志，输出格式化 XLSX 结果。
 
 **模型**:
 
@@ -44,15 +44,14 @@ uv run --script https://cdn.jsdelivr.net/gh/SalicylicAcid/stiffness_damping_comp
 
 > **备用源**：若 CDN 不可用，可将 `cdn.jsdelivr.net/gh/...@main/` 改为 `raw.githubusercontent.com/.../main/`。
 
-运行前确保当前目录下有 `dof_ref_*.csv` / `dof_sta_*.csv` 配对文件。
-结果文件 `stiffness_damping_*.xlsx` 输出到当前目录。
+运行前将工作目录切换到会话日志目录（或日志根目录），结果 XLSX 输出到当前目录。
 
 ### 方式 B：本地运行
 
 ```bash
 git clone https://github.com/SalicylicAcid/stiffness_damping_computer.git
 cd stiffness_damping_computer
-uv run compute.py
+uv run compute.py -C <会话目录或父目录>
 ```
 
 `uv run compute.py` 会自动创建 `.venv` 并安装依赖。首次安装依赖，后续直接执行。
@@ -61,40 +60,82 @@ uv run compute.py
 
 ```bash
 # 指定输入目录和输出目录
-uv run compute.py -C ./data -o ./results
+uv run compute.py -C ./logs -o ./results
+
+# 关闭分析窗口裁剪（调试对比用，结果通常会严重失真）
+uv run compute.py -C ./20261014_094915 --no-trim
 ```
 
-## 输入文件
+## 输入：新版会话日志
 
-脚本自动扫描当前目录下的 CSV 配对：
+每次运行生成一个会话目录（如 `20261014_094915/`）：
 
-| 文件 | 必需 | 说明 |
-|------|------|------|
-| `dof_ref_<suffix>.csv` | ✅ | 参考轨迹 (joint_pos / joint_vel) |
-| `dof_sta_<suffix>.csv` | ✅ | 跟随状态 (joint_pos / joint_vel / joint_tor) |
+```
+<session>/
+├── recorder/
+│   ├── <session>_joint_commands.csv   # 参考轨迹（关节位置）
+│   └── <session>_joint_states.csv     # 跟随状态（位置 / 速度 / 力矩）
+├── ros/                               # 忽略
+└── zl_robot.log                       # 忽略
+```
 
-命名规则：`dof_ref_` 与 `dof_sta_` 共用时间后缀，脚本自动匹配合并。
+脚本扫描 `-C` 指定的目录：若该目录本身是会话目录（含 `recorder/`）则只处理它；否则处理其下所有含 `recorder/` 的子目录（每个会话输出一份 XLSX）。
 
-### CSV 列说明
+### joint_commands.csv 列说明
 
 | 列 | 含义 |
 |----|------|
-| `timestamp` | 时间戳，用于对齐 |
-| `index` | 序列号 |
-| `joint_pos{i}` | 第 i 个关节位置 (rad) |
-| `joint_vel{i}` | 第 i 个关节速度 (rad/s) |
-| `joint_tor{i}` | 第 i 个关节力矩 (Nm) — 仅 sta 文件 |
+| `recorder_time_ms` | 记录时间戳 (ms)，用于与状态对齐 |
+| `stage` / `type` | 命令阶段（如 `prepare_interp` / `control_output`），仅作参考信息展示 |
+| `<joint>_pos` | 关节参考位置 (rad)，关节名如 `arm_l_1`、`leg_r_3` |
+
+### joint_states.csv 列说明
+
+| 列 | 含义 |
+|----|------|
+| `recorder_time_ms` | 记录时间戳 (ms) |
+| `<joint>_pos` | 关节实际位置 (rad) |
+| `<joint>_vel` | 关节实际速度 (rad/s) |
+| `<joint>_tor` | 关节实际力矩 (Nm) |
+
+`---` 为分块分隔列；err / merr / temp / mos / imu 等其余列不参与计算。
+
+### 参考速度
+
+命令日志只有位置，没有速度列，参考速度由位置序列数值差分（中心差分）得到。
+
+### 分析窗口
+
+默认从**参考轨迹首次变化**的采样开始，到日志结束：
+
+- 命令生效前，控制器输出的是默认值（机器人并未执行该命令，例如启动阶段命令被拒绝），
+  若计入会使回归完全失真；
+- 状态日志开头的全零初始化段（驱动上线前）会被自动剔除；
+- 用 `--no-trim` 可关闭裁剪。
+
+## 关节分组
+
+按身体部位自动分组（31 关节 → 2-3-7-7-6-6）：
+
+| 部位 | 关节数 | 显示方式 |
+|------|--------|----------|
+| head | 2 | 独立成块 |
+| waist | 3 | 独立成块 |
+| arm_l / arm_r | 7 / 7 | 并排对比 |
+| leg_l / leg_r | 6 / 6 | 并排对比 |
+
+关节数量或命名变化时自动适配。
 
 ## 输出
 
 | 文件 | 说明 |
 |------|------|
-| `stiffness_damping_<suffix>.xlsx` | 每个配对生成一个 XLSX |
+| `stiffness_damping_<session>.xlsx` | 每个会话生成一个 XLSX |
 
 每份 Excel 包含两个 Sheet：
 
-- **Summary** — 整体统计 (均值/标准差/范围) + 指标说明
-- **Data** — 各关节 $K$ / $D$ / $R^2$ / RMSE 逐关节结果，按关节分组排版（7-7 / 6-6 并排对比）
+- **Summary** — 分析窗口 / 整体统计 (均值/标准差/范围) + 指标说明
+- **<session>** — 各关节 $K$ / $D$ / $R^2$ / RMSE 逐关节结果，按身体部位分组排版
 
 ### 字体颜色说明
 
@@ -103,7 +144,7 @@ uv run compute.py -C ./data -o ./results
 | 深绿 | 正常 / 较好 |
 | 棕色 | 一般 / 偏弱 |
 | 深红 | 异常 / 较差 |
-| 灰色 | 无效数据 (力矩恒为零) |
+| 灰色 | 无效数据 (力矩恒为零 / 无激励) |
 
 ### 异常判定依据
 
@@ -113,15 +154,10 @@ uv run compute.py -C ./data -o ./results
 | RMSE | $\le P_{75}$ | $P_{75} \sim P_{90}$ | $> P_{90}$ |
 | $K$ / $D$ | $\lvert z \rvert \le 1$ | $1 < \lvert z \rvert \le 2$ | $\lvert z \rvert > 2$ |
 
-## 关节分组
+## 旧版日志
 
-| 关节数 | 分组 |
-|--------|------|
-| 29 | 7-7-3-6-6 |
-| 27 | 7-7-1-6-6 |
-| 其它 | 自动适配 |
-
-A-B 组 (7-7) 和 D-E 组 (6-6) 并排对比。
+旧版 `dof_ref_*.csv` / `dof_sta_*.csv` 配对格式请使用
+[`legacy` 分支](https://github.com/SalicylicAcid/stiffness_damping_computer/tree/legacy)。
 
 ## 系统兼容性
 
@@ -139,7 +175,5 @@ A-B 组 (7-7) 和 D-E 组 (6-6) 并排对比。
 ├── pyproject.toml                 # 项目配置 & 依赖声明
 ├── .gitignore
 ├── README.md
-├── dof_ref_*.csv                  # 输入: 参考轨迹 (不纳入版本控制)
-├── dof_sta_*.csv                  # 输入: 跟随状态 (不纳入版本控制)
 └── stiffness_damping_*.xlsx       # 输出: 结果文件 (不纳入版本控制)
 ```
