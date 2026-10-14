@@ -25,9 +25,16 @@ Joint Stiffness & Damping 回归计算 (新版日志) + 格式化 XLSX 输出
   uv run compute.py --no-trim                # 不裁剪分析窗口 (调试对比用)
 
 分析窗口:
-  默认从「参考轨迹首次变化」的采样开始, 到日志结束。命令生效前记录的是控制器
-  默认输出 (机器人并未执行该命令), 若计入会使回归完全失真; 状态日志开头的
-  全零初始化段同样会被自动剔除。
+  默认只使用「参考轨迹实际运动」的采样段 (机器人实际运行段):
+    - 命令生效前记录的是控制器默认输出 (机器人并未执行该命令), 计入会使回归完全失真;
+    - 长时间静态保持段 (参考速度≈0) 不提供 K/D 辨识信息, 一并剔除;
+    - 速度阈值按会话主运动速度自适应 (p99 的 5%), 并做 50ms 平滑抑制命令跳变尖峰;
+    - 状态日志开头的全零初始化段同样会被自动剔除;
+    - 用 --no-trim 可关闭筛选, 使用全部重叠数据。
+
+  注意: 若日志中只有缓慢的准备/归位插值 (准静态单向), 力矩随位姿 (重力/前馈) 变化,
+  回归得到的 K 反映负载而非控制器刚度 (会出现 K<0, 工具会给出预警); 请使用包含
+  机器人真实运行 (往复/振荡运动) 的日志段。
 
 关节分组 (按身体部位, 31 关节 → 2-3-7-7-6-6):
   head(2) / waist(3) 独立成块; arm_l↔arm_r (7-7)、leg_l↔leg_r (6-6) 并排对比。
@@ -64,6 +71,12 @@ BAD_COLOR     = "C00000"   # 深红: 异常 / 较差
 
 # 参考轨迹「开始运动」判定阈值 (rad, 相对命令起始值的累计偏差)
 MOTION_EPS = 1e-5
+# 参考轨迹「正在运动」判定: 速度平滑窗 (s) / 相对阈值 (占会话主运动速度 p99 的比例) / 绝对下限 (rad/s)
+MOTION_SMOOTH_S = 0.05
+MOTION_SPEED_FRAC = 0.05
+MOTION_SPEED_EPS = 2e-3
+# 运动分段合并间隔 (s): 间隔小于该值的两段运动视为同一段 (如步态摆动过零)
+MOTION_GAP_S = 0.5
 
 
 def get_quality_font(value, metric, valid_scores):
@@ -342,6 +355,37 @@ def load_and_compute(cmd_path, sta_path, label, trim=True):
     t_start, t_end = float(t_cmd_u[0]), float(t_cmd_u[-1])
     mask = (t_sta >= t_start) & (t_sta <= t_end)
     mask[:i_s0] = False
+
+    # --- 只保留「参考轨迹正在运动」的采样 (机器人实际运行段) ---
+    n_seg = 1
+    seg_list = []
+    win_start_s = (t_start - float(t_cmd[0])) / 1000.0
+    win_end_s = (t_end - float(t_cmd[0])) / 1000.0
+    win_dur_s = (t_end - t_start) / 1000.0
+    if trim and motion_detected:
+        speed = np.abs(V_ref_u).max(axis=1)          # 每采样点最大关节参考速度
+        dt_med = float(np.median(np.diff(t_cmd_u))) / 1000.0
+        k_sm = max(1, int(round(MOTION_SMOOTH_S / dt_med))) if dt_med > 0 else 1
+        if k_sm > 1:                                  # 平滑, 抑制命令跳变产生的单点尖峰
+            speed = np.convolve(speed, np.ones(k_sm) / k_sm, mode="same")
+        thr = max(MOTION_SPEED_EPS, MOTION_SPEED_FRAC * float(np.percentile(speed, 99)))
+        moving = speed > thr
+        if moving.any():
+            mask &= np.interp(t_sta, t_cmd_u, moving.astype(float)) > 0.5
+            idx_mv = np.flatnonzero(moving)
+            gap_idx = int(round(MOTION_GAP_S / dt_med)) if dt_med > 0 else 1
+            cut = np.diff(idx_mv) > max(gap_idx, 1)
+            starts = np.concatenate([[idx_mv[0]], idx_mv[1:][cut]])
+            ends = np.concatenate([idx_mv[1:][cut], [idx_mv[-1]]])
+            n_seg = len(starts)
+            win_start_s = (t_cmd_u[starts[0]] - float(t_cmd[0])) / 1000.0
+            win_end_s = (t_cmd_u[ends[-1]] - float(t_cmd[0])) / 1000.0
+            win_dur_s = float(sum((t_cmd_u[e] - t_cmd_u[s]) / 1000.0
+                                  for s, e in zip(starts, ends)))
+            seg_list = [((t_cmd_u[s] - float(t_cmd[0])) / 1000.0,
+                         (t_cmd_u[e] - float(t_cmd[0])) / 1000.0)
+                        for s, e in zip(starts, ends)]
+
     n_sta_used = int(mask.sum())
     if n_sta_used < 10:
         raise ValueError(f"参考窗口内状态采样过少 ({n_sta_used} 行)")
@@ -403,9 +447,11 @@ def load_and_compute(cmd_path, sta_path, label, trim=True):
         "label": label,
         "n_cmd_total": len(rows_cmd), "n_cmd_used": int(len(t_cmd_u)),
         "n_sta_total": len(rows_sta), "n_sta_used": n_sta_used,
-        "win_start_s": (t_start - float(t_cmd[0])) / 1000.0,
-        "win_end_s": (t_end - float(t_cmd[0])) / 1000.0,
-        "win_dur_s": (t_end - t_start) / 1000.0,
+        "win_start_s": win_start_s,
+        "win_end_s": win_end_s,
+        "win_dur_s": win_dur_s,
+        "n_seg": n_seg,
+        "seg_list": seg_list,
         "trim_s": (t_start - float(t_cmd[0])) / 1000.0,
         "stages": stages,
         "motion_detected": motion_detected,
@@ -433,6 +479,30 @@ def fmt_metric(val, valid, nan_text="—"):
     if valid and not np.isnan(val):
         return float(val)
     return nan_text
+
+
+def window_text(meta):
+    """分析窗口说明文本 (数据表 / Summary / 控制台共用)"""
+    txt = (f"分析窗口: 实际运行段 +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s"
+           f" (运动 {meta['win_dur_s']:.1f}s / {meta['n_seg']} 段)")
+    if meta["trim_s"] > 0.01:
+        txt += f"  |  已剔除前 {meta['trim_s']:.2f}s 命令未生效段"
+    if meta.get("stages"):
+        txt += f"  |  Stages: {meta['stages']}"
+    return txt
+
+
+def check_load_dominated(results):
+    """
+    负刚度预警: 稳定位置控制器不可能出现 K<0。
+    若拟合质量好 (R²>0.8) 但 K<0, 说明该段为准静态/负载主导, 无法分离控制器刚度。
+    返回负刚度且拟合良好的关节名列表。
+    """
+    out = []
+    for r in results:
+        if r["valid"] and r["K"] < 0 and not np.isnan(r["R2"]) and r["R2"] > 0.8:
+            out.append(r["joint"])
+    return out
 
 
 # 指标说明文本
@@ -505,14 +575,8 @@ def write_data_sheet(ws, results, joints, meta, valid_scores):
     info_cell.font = Font(name="Microsoft YaHei", size=9, color="666666")
     row += 1
 
-    win_txt = (f"分析窗口: +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s"
-               f" ({meta['win_dur_s']:.1f}s)")
-    if meta["trim_s"] > 0.01:
-        win_txt += f"  |  已裁剪前 {meta['trim_s']:.2f}s (命令未生效段)"
-    if meta.get("stages"):
-        win_txt += f"  |  Stages: {meta['stages']}"
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=13)
-    ws.cell(row=row, column=2, value=win_txt).font = Font(
+    ws.cell(row=row, column=2, value=window_text(meta)).font = Font(
         name="Microsoft YaHei", size=9, color="666666")
     row += 2
 
@@ -599,11 +663,7 @@ def write_summary_sheet(ws, meta, results, joints):
     row += 1
 
     ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
-    win_txt = (f"分析窗口: +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s"
-               f" ({meta['win_dur_s']:.1f}s)")
-    if meta.get("stages"):
-        win_txt += f"  |  Stages: {meta['stages']}"
-    ws.cell(row=row, column=2, value=win_txt).font = Font(
+    ws.cell(row=row, column=2, value=window_text(meta)).font = Font(
         name="Microsoft YaHei", size=9, color="666666")
     row += 1
 
@@ -663,6 +723,18 @@ def write_summary_sheet(ws, meta, results, joints):
             ws.row_dimensions[row].height = 22
             row += 1
         apply_banding(ws, stat_start, row - 1, 2, 5)
+
+        neg = check_load_dominated(results)
+        if neg:
+            ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+            cell = ws.cell(row=row, column=2,
+                           value=f"⚠ {len(neg)} 个关节 K<0 且 R²>0.8 "
+                                 f"({', '.join(neg)}) — 该段为准静态/负载主导, "
+                                 f"K 反映负载随位姿变化, 不代表控制器刚度")
+            cell.font = Font(name="Microsoft YaHei", size=9, color=BAD_COLOR)
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+            ws.row_dimensions[row].height = 28
+            row += 1
     else:
         ws.cell(row=row, column=2, value="No valid joints").font = WARN_FONT
         row += 1
@@ -745,7 +817,8 @@ def main():
     parser.add_argument("-o", "--output-dir", default=None,
                         help="XLSX 输出目录 (默认: 与输入相同)")
     parser.add_argument("--no-trim", action="store_true",
-                        help="不裁剪分析窗口 (默认从参考轨迹首次变化处开始)")
+                        help="不筛选分析窗口, 使用全部重叠数据 "
+                             "(默认只用参考轨迹实际运动段)")
     args = parser.parse_args()
 
     work_dir = os.path.abspath(args.cwd)
@@ -781,12 +854,19 @@ def main():
         valid = [r for r in results if r["valid"]]
         print(f"  Joints: {len(joints)}  Groups: "
               f"{'-'.join(str(len(groups[g])) for g in ordered)}  Valid: {len(valid)}")
-        print(f"  Window: +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s "
-              f"({meta['win_dur_s']:.1f}s, {meta['n_sta_used']} samples)")
+        print(f"  Window: 运行段 +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s "
+              f"(运动 {meta['win_dur_s']:.1f}s / {meta['n_seg']} 段, "
+              f"{meta['n_sta_used']} samples)")
         if meta.get("stages"):
             print(f"  Stages: {meta['stages']}")
         if not meta.get("motion_detected", True):
             print("  WARN: 未检测到参考轨迹运动, 回归结果可能不可用")
+        neg = check_load_dominated(results)
+        if neg:
+            print(f"  WARN: {len(neg)} 个关节 K<0 且拟合良好 ({', '.join(neg[:6])}"
+                  f"{' ...' if len(neg) > 6 else ''})")
+            print("        → 该段可能为准静态/负载主导, K 反映负载随位姿变化, 不代表控制器刚度;")
+            print("          建议改用机器人真实运行(快速往复运动)的日志段")
 
         cross_scores = build_scores(valid)
 
