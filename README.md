@@ -75,9 +75,15 @@ uv run compute.py -C <会话目录或父目录>
 # 指定输入目录和输出目录
 uv run compute.py -C ./logs -o ./results
 
-# 关闭分析窗口裁剪（调试对比用，结果通常会严重失真）
+# 只分析指定时间段 (相对日志起始的秒数, 如平台期之后进入策略的时段)
+uv run compute.py -C ./20261014_112734 --start 33.8 --end 64.7
+
+# 关闭分析窗口筛选（调试对比用，结果通常会严重失真）
 uv run compute.py -C ./20261014_094915 --no-trim
 ```
+
+`--start` / `--end` 可与默认的运动段筛选叠加使用：先按时间段截取，再剔除其中的静态采样；
+输出文件名会带上区间后缀（如 `stiffness_damping_<session>_33.8-64.7s.xlsx`）。
 
 ## 输入：新版会话日志
 

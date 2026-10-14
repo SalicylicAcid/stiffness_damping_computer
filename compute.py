@@ -297,7 +297,7 @@ def group_joints(joints):
 # ============================================================
 # 4. 数据处理 (对齐 + 回归)
 # ============================================================
-def load_and_compute(cmd_path, sta_path, label, trim=True):
+def load_and_compute(cmd_path, sta_path, label, trim=True, t_from=None, t_to=None):
     h_cmd, rows_cmd = load_table(cmd_path)
     h_sta, rows_sta = load_table(sta_path)
     ci, si = col_index(h_cmd), col_index(h_sta)
@@ -355,6 +355,12 @@ def load_and_compute(cmd_path, sta_path, label, trim=True):
     t_start, t_end = float(t_cmd_u[0]), float(t_cmd_u[-1])
     mask = (t_sta >= t_start) & (t_sta <= t_end)
     mask[:i_s0] = False
+
+    # --- 用户指定的时间窗 (相对日志起始, 秒) ---
+    if t_from is not None:
+        mask &= t_sta >= float(t_cmd[0]) + t_from * 1000.0
+    if t_to is not None:
+        mask &= t_sta <= float(t_cmd[0]) + t_to * 1000.0
 
     # --- 只保留「参考轨迹正在运动」的采样 (机器人实际运行段) ---
     n_seg = 1
@@ -453,6 +459,7 @@ def load_and_compute(cmd_path, sta_path, label, trim=True):
         "n_seg": n_seg,
         "seg_list": seg_list,
         "trim_s": (t_start - float(t_cmd[0])) / 1000.0,
+        "t_from": t_from, "t_to": t_to,
         "stages": stages,
         "motion_detected": motion_detected,
         "dropped_joints": [j for j in all_joints if j not in joints],
@@ -485,7 +492,11 @@ def window_text(meta):
     """分析窗口说明文本 (数据表 / Summary / 控制台共用)"""
     txt = (f"分析窗口: 实际运行段 +{meta['win_start_s']:.2f}s ~ +{meta['win_end_s']:.2f}s"
            f" (运动 {meta['win_dur_s']:.1f}s / {meta['n_seg']} 段)")
-    if meta["trim_s"] > 0.01:
+    if meta.get("t_from") is not None or meta.get("t_to") is not None:
+        a = f"{meta['t_from']:.2f}s" if meta.get("t_from") is not None else "起始"
+        b = f"{meta['t_to']:.2f}s" if meta.get("t_to") is not None else "结束"
+        txt = f"指定区间 +{a} ~ +{b}  |  " + txt
+    elif meta["trim_s"] > 0.01:
         txt += f"  |  已剔除前 {meta['trim_s']:.2f}s 命令未生效段"
     if meta.get("stages"):
         txt += f"  |  Stages: {meta['stages']}"
@@ -807,6 +818,18 @@ def safe_sheet_name(name):
 # ============================================================
 # 8. Main
 # ============================================================
+def parse_time_arg(s):
+    """解析时间参数: '33.8' / '+33.8s' → 秒 (相对日志起始)"""
+    if s is None:
+        return None
+    txt = s.strip().lower().rstrip("s").lstrip("+")
+    try:
+        return float(txt)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"无法解析时间 '{s}' (示例: 33.8 或 +33.8s)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Joint Stiffness & Damping 回归计算 (新版会话日志)",
@@ -819,6 +842,10 @@ def main():
     parser.add_argument("--no-trim", action="store_true",
                         help="不筛选分析窗口, 使用全部重叠数据 "
                              "(默认只用参考轨迹实际运动段)")
+    parser.add_argument("--start", type=parse_time_arg, default=None,
+                        help="分析起始时刻 (相对日志起始的秒数, 如 33.8 或 +33.8s)")
+    parser.add_argument("--end", type=parse_time_arg, default=None,
+                        help="分析结束时刻 (相对日志起始的秒数)")
     args = parser.parse_args()
 
     work_dir = os.path.abspath(args.cwd)
@@ -845,7 +872,8 @@ def main():
 
         try:
             results, joints, meta = load_and_compute(
-                cmd_path, sta_path, label, trim=not args.no_trim)
+                cmd_path, sta_path, label, trim=not args.no_trim,
+                t_from=args.start, t_to=args.end)
         except Exception as e:
             print(f"  ERROR: {e}")
             continue
@@ -880,7 +908,13 @@ def main():
         write_data_sheet(ws, results, joints, meta, cross_scores)
 
         os.makedirs(out_dir, exist_ok=True)
-        output_path = os.path.join(out_dir, f"stiffness_damping_{label}.xlsx")
+        if args.start is not None or args.end is not None:
+            a = f"{args.start:g}" if args.start is not None else "0"
+            b = f"{args.end:g}" if args.end is not None else "end"
+            out_name = f"stiffness_damping_{label}_{a}-{b}s.xlsx"
+        else:
+            out_name = f"stiffness_damping_{label}.xlsx"
+        output_path = os.path.join(out_dir, out_name)
         wb.save(output_path)
         print(f"  Saved: {os.path.basename(output_path)}")
 
